@@ -60,9 +60,8 @@ services:
     container_name: n8n
     restart: unless-stopped
     # Можно убрать ports, так как доступ через traefik
-
-  # ports:
-  #   - "127.0.0.1:5678:5678"
+    ports:
+     - "127.0.0.1:5678:5678"
     labels:
       # enable Traefik
       - traefik.enable=true
@@ -98,12 +97,10 @@ services:
       - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
       # time
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
-      - TZ=${GENERIC_TIMEZONE}
       # video-API
       - VIDEO_API_URL=http://video-api:8181
     # Дополнительно для безопасности
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}  # добавьте в .env
-      - N8N_USER_MANAGEMENT_DISABLED=true  # или true если один пользователь
     volumes:
       - shared_video_data:/home/node/.n8n-files
       - n8n_data:/home/node/.n8n
