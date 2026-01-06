@@ -1,5 +1,3 @@
-version: "3.8"
-
 volumes:
   shared_video_data:
   n8n_data:
@@ -11,7 +9,7 @@ networks:
 
 services:
   video-api:
-    image: mosstnslv/yt-dlp-ffmpeg-api-service:latest
+    image: mosstnslv/yt-dlp-ffmpeg-api-service:1.0.0
     container_name: yt-dlp-ffmpeg-api
     ports:
       - "127.0.0.1:8181:8181"
@@ -30,65 +28,105 @@ services:
       retries: 3
 
   traefik:
-    image: "traefik"
+    image: traefik:v3.6
+    container_name: traefik
     restart: unless-stopped
     command:
-      - "--api.insecure=true"
+      # API и Dashboard
+      - "--api.dashboard=true"
+      # Docker провайдер
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=app-network"
+      # Entrypoints
       - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
-      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
-      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+      # HTTPS redirect
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      # SSL certs
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
+      - "8080:8080" # Traefik dashboard
     volumes:
       - traefik_data:/letsencrypt
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - app-network
+    labels:
+      # Защита dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      # Basic Auth middleware
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_USER}:${TRAEFIK_PASSWORD_HASH}"
 
   n8n:
     image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:5678:5678"
+    # Можно убрать ports, так как доступ через traefik
+
+  # ports:
+  #   - "127.0.0.1:5678:5678"
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
-      - traefik.http.routers.n8n.tls=true
-      - traefik.http.routers.n8n.entrypoints=web,websecure
-      - traefik.http.routers.n8n.tls.certresolver=mytlschallenge
-      - traefik.http.services.n8n.loadbalancer.server.port=5678
-      - traefik.docker.network=app-network
-      - traefik.http.middlewares.n8n.headers.SSLRedirect=true
-      - traefik.http.middlewares.n8n.headers.STSSeconds=315360000
-      - traefik.http.middlewares.n8n.headers.browserXSSFilter=true
-      - traefik.http.middlewares.n8n.headers.contentTypeNosniff=true
-      - traefik.http.middlewares.n8n.headers.forceSTSHeader=true
-      - traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}
-      - traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true
-      - traefik.http.middlewares.n8n.headers.STSPreload=true
-      - traefik.http.routers.n8n.middlewares=n8n@docker
+      # enable Traefik
+      - "traefik.enable=true"
+      # HTTP router
+      - "traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls=true"
+      - "traefik.http.routers.n8n.tls.certresolver=letsencrypt"
+      # Service
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      - "traefik.docker.network=app-network"
+      # Middlewares
+      - "traefik.http.middlewares.n8n.headers.STSSeconds=31536000"
+      - "traefik.http.middlewares.n8n.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true"
+      - "traefik.http.middlewares.n8n.headers.STSPreload=true"
+      - "traefik.http.middlewares.n8n.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.n8n.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}"
+      - "traefik.http.middlewares.n8n.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.n8n.middlewares=n8n"
     environment:
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+        # Вебхук и хост
       - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - N8N_RUNNERS_ENABLED=true
+      # security
+      - N8N_SECURE_COOKIE=true
       - NODE_ENV=production
       - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
+      # time
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
       - TZ=${GENERIC_TIMEZONE}
+      # video-API
       - VIDEO_API_URL=http://video-api:8181
+    # Дополнительно для безопасности
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}  # добавьте в .env
+      - N8N_USER_MANAGEMENT_DISABLED=true  # или true если один пользователь
     volumes:
       - shared_video_data:/home/node/.n8n-files
       - n8n_data:/home/node/.n8n
       - ./local-files:/files
     networks:
       - app-network
+    depends_on:
+      video-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz/readiness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
