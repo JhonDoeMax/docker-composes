@@ -11,6 +11,7 @@ services:
   video-api:
     image: mosstnslv/yt-dlp-ffmpeg-api-service:1.0.0
     container_name: yt-dlp-ffmpeg-api
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8181:8181"
     volumes:
@@ -20,7 +21,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1 # really important in docker containers
       - MAX_DOWNLOAD_SIZE=1GB
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
       interval: 30s
@@ -32,9 +32,7 @@ services:
     container_name: traefik
     restart: unless-stopped
     command:
-      # API и Dashboard
-      - "--api.dashboard=true"
-      # Docker провайдер
+      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=app-network"
@@ -51,21 +49,11 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080" # Traefik dashboard
     volumes:
       - traefik_data:/letsencrypt
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - app-network
-    labels:
-      # Защита dashboard
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN_NAME}`)"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.tls=true"
-      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.dashboard.middlewares=auth"
-      # Basic Auth middleware
-      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_USER}:${TRAEFIK_PASSWORD_HASH}"
 
   n8n:
     image: docker.n8n.io/n8nio/n8n
@@ -77,34 +65,35 @@ services:
   #   - "127.0.0.1:5678:5678"
     labels:
       # enable Traefik
-      - "traefik.enable=true"
+      - traefik.enable=true
       # HTTP router
-      - "traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)"
-      - "traefik.http.routers.n8n.entrypoints=websecure"
-      - "traefik.http.routers.n8n.tls=true"
-      - "traefik.http.routers.n8n.tls.certresolver=letsencrypt"
-      # Service
-      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
-      - "traefik.docker.network=app-network"
-      # Middlewares
-      - "traefik.http.middlewares.n8n.headers.STSSeconds=31536000"
-      - "traefik.http.middlewares.n8n.headers.forceSTSHeader=true"
-      - "traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true"
-      - "traefik.http.middlewares.n8n.headers.STSPreload=true"
-      - "traefik.http.middlewares.n8n.headers.browserXSSFilter=true"
-      - "traefik.http.middlewares.n8n.headers.contentTypeNosniff=true"
-      - "traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}"
-      - "traefik.http.middlewares.n8n.headers.customrequestheaders.X-Forwarded-Proto=https"
-      - "traefik.http.routers.n8n.middlewares=n8n"
+      - traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
+      - traefik.http.routers.n8n.entrypoints=web,websecure
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.tls.certresolver=letsencrypt
+      - traefik.http.middlewares.n8n.headers.SSLRedirect=true
+      - traefik.http.middlewares.n8n.headers.STSSeconds=315360000
+      - traefik.http.middlewares.n8n.headers.browserXSSFilter=true
+      - traefik.http.middlewares.n8n.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.n8n.headers.forceSTSHeader=true
+      - traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}
+      - traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.n8n.headers.STSPreload=true
+      - traefik.http.middlewares.n8n.headers.customrequestheaders.X-Forwarded-Proto=https
+      - traefik.http.routers.n8n.middlewares=n8n@docker
+      # network
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+      - traefik.docker.network=app-network
+
     environment:
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
         # Вебхук и хост
       - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
-      - N8N_RUNNERS_ENABLED=true
+      # - N8N_RUNNERS_ENABLED=true # separete riski code
+      # https://docs.n8n.io/hosting/configuration/environment-variables/task-runners/
       # security
-      - N8N_SECURE_COOKIE=true
       - NODE_ENV=production
       - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
       # time
