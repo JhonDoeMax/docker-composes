@@ -35,7 +35,6 @@ services:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=app-network"
       # Entrypoints
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
@@ -52,8 +51,6 @@ services:
     volumes:
       - traefik_data:/letsencrypt
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - app-network
 
   n8n:
     image: docker.n8n.io/n8nio/n8n
@@ -78,7 +75,6 @@ services:
       - traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}
       - traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true
       - traefik.http.middlewares.n8n.headers.STSPreload=true
-      #- traefik.http.middlewares.n8n.headers.customrequestheaders.X-Forwarded-Proto=https
       - traefik.http.routers.n8n.middlewares=n8n@docker
       # network
       - traefik.docker.network=app-network
@@ -108,6 +104,6 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5678/healthz/readiness"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
       start_period: 60s
