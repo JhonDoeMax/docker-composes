@@ -16,11 +16,13 @@ services:
       - "127.0.0.1:8181:8181"
     volumes:
       - shared_video_data:/app/downloads
+      - ./data/cookies:/app/cookies:ro
     networks:
       - app-network
     environment:
       - PYTHONUNBUFFERED=1 # really important in docker containers
       - MAX_DOWNLOAD_SIZE=1GB
+      - COOKIES_PATH=/app/cookies/reddit_cookies.txt
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
       interval: 30s
@@ -97,12 +99,3 @@ services:
       - ./local-files:/files
     networks:
       - app-network
-    depends_on:
-      video-api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz/readiness"]
-      interval: 30s
-      timeout: 30s
-      retries: 3
-      start_period: 60s

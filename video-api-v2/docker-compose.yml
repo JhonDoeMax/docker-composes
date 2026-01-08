@@ -1,0 +1,28 @@
+volumes:
+  shared_video_data:
+
+networks:
+  app-network:
+    driver: bridge
+
+services:
+  video-api-v2:
+    image: mosstnslv/yt-dlp-ffmpeg-api-service:1.0.1
+    container_name: yt-dlp-ffmpeg-api-1.0.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8181:8181"
+    volumes:
+      - shared_video_data:/app/downloads
+      - ./data/cookies:/app/cookies:ro
+    networks:
+      - app-network
+    environment:
+      - PYTHONUNBUFFERED=1 # really important in docker containers
+      - MAX_DOWNLOAD_SIZE=1GB
+      - COOKIES_PATH=/app/cookies/reddit_cookies.txt
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
